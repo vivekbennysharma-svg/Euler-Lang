@@ -1,0 +1,17 @@
+*.exe
+*.bin
+*.out
+
+*.o
+*.obj
+*.a
+*.lib
+
+temp.c
+euler_temp.c
+
+.vscode/
+.idea/
+*.swp
+*.bak
+Thumbs.db

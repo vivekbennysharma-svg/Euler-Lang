@@ -1,2 +1,2 @@
 @echo off
-mingw32-make %1
+mingw32-make run FILE=%1
