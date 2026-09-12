@@ -209,6 +209,11 @@ ASTNode* parse_factor(Parser* parser) {
             ASTNode* call_node = ast_create_node(NODE_CALL, name);
             call_node->left = parse_expr(parser);
             
+            if(parser->current.type == TOK_COMMA) {
+                parser_advance(parser);
+                call_node->right = parse_expr(parser);
+            }
+
             if(parser->current.type != TOK_RPAREN) {
                 fprintf(stderr, "Expected ')'\n");
                 exit(EXIT_FAILURE);
@@ -286,6 +291,10 @@ void codegen_expr(const ASTNode* node) {
         case NODE_CALL:
             printf("euler_%s(", node->value);
             codegen_expr(node->left);
+            if(node->right) {
+                printf(", ");
+                codegen_expr(node->right);
+            }
             printf(")");
             break;
         case NODE_BINARY_OP:
