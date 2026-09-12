@@ -27,9 +27,9 @@ run: $(PARSER_BIN) $(RUNTIME_SRC) $(RUNTIME_HDR)
 	@if exist $(TEMP_C) del /F /Q $(TEMP_C)
 	@echo [4/4] Running program...
 	@echo ------------------------------------------------------------
-	@./program.exe
+	@program.exe
 	@echo ------------------------------------------------------------
-
+clean:
 	@if exist $(PARSER_BIN) del /F /Q $(PARSER_BIN)
 	@if exist $(TEMP_C) del /F /Q $(TEMP_C)
 	@if exist *.exe del /F /Q *.exe
