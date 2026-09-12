@@ -1,7 +1,1 @@
-int main(){
-    var x;
-    expr f = x^2 + sin(x);
-    expr df = diff(f,x);
-    print_expr(df);
-    return 0;
-}
+diff(x^3 + sin(x),x)

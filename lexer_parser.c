@@ -110,6 +110,11 @@ void lexer_init(Lexer* lexer, const char* src) {
     lexer->pos = 0;
 }
 
+void lexer_skip_whitespace(Lexer* lexer) {
+    while (lexer->input[lexer->pos]!= '\0' && isspace((unsigned char)lexer->input[lexer->pos])) {
+        lexer->pos++;
+    }
+}
 Token lexer_next_token(Lexer* lexer) {
     lexer_skip_whitespace(lexer);
 
