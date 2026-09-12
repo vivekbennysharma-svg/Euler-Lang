@@ -23,7 +23,7 @@ typedef enum {
 //atomic token structure
 typedef struct {
     TokenType type;
-    char* value;
+    char value[64];
 } Token;
 
 //lexer structure
@@ -81,7 +81,7 @@ void codegen_program(const ASTNode* root);
 
 //    ||FUNCTION IMPLEMENTATIONS||
 char* read_file_to_string(const char* filepath) {
-    FILE* file = fopen(filepath, "r");
+    FILE* file = fopen(filepath, "rb");
     if (!file) {
         perror("Failed to open file");
         return NULL;
@@ -113,70 +113,53 @@ void lexer_init(Lexer* lexer, const char* src) {
 Token lexer_next_token(Lexer* lexer) {
     lexer_skip_whitespace(lexer);
 
+    Token tok;
+    memset(&tok, 0, sizeof(tok));
+    memset(tok.value, 0, sizeof(tok.value));
+
     char current_char = lexer->input[lexer->pos];
     if (current_char == '\0') {
-        return (Token){TOK_EOF, NULL};
+        tok.type = TOK_EOF;
+        return tok;
     }
 
     if (isdigit(current_char)) {
-        size_t start = lexer->pos;
-        while (isdigit(lexer->input[lexer->pos])) {
-            lexer->pos++;
+        size_t idx = 0;
+        while ((isdigit((unsigned char)lexer->input[lexer->pos]) || lexer->input[lexer->pos] == '.') && idx < 63){
+            tok.value[idx++] = lexer->input[lexer->pos++];
         }
-        size_t length = lexer->pos - start;
-        char* value = (char*)malloc(length + 1);
-        strncpy(value, lexer->input + start, length);
-        value[length] = '\0';
-        return (Token){TOK_NUMBER, value};
+        tok.type = TOK_NUMBER;
+        return tok;
     }
 
     if (isalpha(current_char)) {
-        size_t start = lexer->pos;
-        while (isalnum(lexer->input[lexer->pos])) {
-            lexer->pos++;
+        size_t idx = 0;
+        while ((isalnum((unsigned char)lexer->input[lexer->pos]) || lexer->input[lexer->pos] == '_') && idx < 63) {
+            tok.value[idx++] = lexer->input[lexer->pos++];
         }
-        size_t length = lexer->pos - start;
-        char* value = (char*)malloc(length + 1);
-        strncpy(value, lexer->input + start, length);
-        value[length] = '\0';
-        return (Token){TOK_IDENTIFIER, value};
+        tok.type = TOK_IDENTIFIER;
+        return tok;
     }
+
+    lexer->pos++;
+    tok.value[0] = current_char;
+    tok.value[1] = '\0';
 
     switch (current_char) {
-        case '+':
-            lexer->pos++;
-            return (Token){TOK_PLUS, strdup("+")};
-        case '-':
-            lexer->pos++;
-            return (Token){TOK_MINUS, strdup("-")};
-        case '*':
-            lexer->pos++;
-            return (Token){TOK_MULTIPLY, strdup("*")};
-        case '/':
-            lexer->pos++;
-            return (Token){TOK_DIVIDE, strdup("/")};
-        case '^':
-            lexer->pos++;
-            return (Token){TOK_CARET, strdup("^")};
-        case '(':
-            lexer->pos++;
-            return (Token){TOK_LPAREN, strdup("(")};
-        case ')':
-            lexer->pos++;
-            return (Token){TOK_RPAREN, strdup(")")};
-        case '=':
-            lexer->pos++;
-            return (Token){TOK_ASSIGN, strdup("=")};
-        case ';':
-            lexer->pos++;
-            return (Token){TOK_SEMICOLON, strdup(";")};
-        case ',':
-            lexer->pos++;
-            return (Token){TOK_COMMA, strdup(",")};
+        case '+': tok.type = TOK_PLUS; return tok;
+        case '-': tok.type = TOK_MINUS; return tok;
+        case '*': tok.type = TOK_MULTIPLY; return tok;
+        case '/': tok.type = TOK_DIVIDE; return tok;
+        case '^': tok.type = TOK_CARET; return tok;
+        case '(': tok.type = TOK_LPAREN; return tok;
+        case ')': tok.type = TOK_RPAREN; return tok;
+        case '=': tok.type = TOK_ASSIGN; return tok;
+        case ';': tok.type = TOK_SEMICOLON; return tok;
+        case ',': tok.type = TOK_COMMA; return tok;
+        default:
+            fprintf(stderr, "Unknown character: %c\n", current_char);
+            exit(EXIT_FAILURE);
     }
-
-    fprintf(stderr, "Unknown character: %c\n", current_char);
-    exit(EXIT_FAILURE);
 }
 
 ASTNode* ast_create_node(ASTNodeType type, const char* value) {
@@ -217,9 +200,25 @@ ASTNode* parse_factor(Parser* parser) {
         parser_advance(parser);
         return ast_create_node(NODE_NUMBER, token.value);
     } else if (token.type == TOK_IDENTIFIER) {
+        char name[64];
+        strncpy(name, token.value, sizeof(name));
         parser_advance(parser);
-        return ast_create_node(NODE_IDENTIFIER, token.value);
-    } else if (token.type == TOK_LPAREN) {
+        
+        if(parser->current.type == TOK_LPAREN) {
+            parser_advance(parser);
+            ASTNode* call_node = ast_create_node(NODE_CALL, name);
+            call_node->left = parse_expr(parser);
+            
+            if(parser->current.type != TOK_RPAREN) {
+                fprintf(stderr, "Expected ')'\n");
+                exit(EXIT_FAILURE);
+            }
+            parser_advance(parser);
+            return call_node;
+        }
+        return ast_create_node(NODE_IDENTIFIER, name);
+    }
+    if (token.type == TOK_LPAREN) {
         parser_advance(parser);
         ASTNode* node = parse_expr(parser);
         if (parser->current.type != TOK_RPAREN) {
@@ -228,41 +227,15 @@ ASTNode* parse_factor(Parser* parser) {
         }
         parser_advance(parser);
         return node;
-    } else {
-        fprintf(stderr, "Unexpected token: %s\n", token.value);
-        exit(EXIT_FAILURE);
     }
+    fprintf(stderr, "Unexpected token: %s\n", token.value);
+    exit(EXIT_FAILURE);
 }
 
 ASTNode* parse_term(Parser* parser) {
-    ASTNode* node = parse_factor(parser);
-    while (parser->current.type == TOK_MULTIPLY || parser->current.type == TOK_DIVIDE) {
-        Token token = parser->current;
-        parser_advance(parser);
-        ASTNode* new_node = ast_create_node(NODE_BINARY_OP, token.value);
-        ast_add_child(new_node, node);
-        ast_add_child(new_node, parse_factor(parser));
-        node = new_node;
-    }
-    return node;
-}
-
-ASTNode* parse_power(Parser* parser) {
-    ASTNode* node = parse_term(parser);
-    while (parser->current.type == TOK_CARET) {
-        Token token = parser->current;
-        parser_advance(parser);
-        ASTNode* new_node = ast_create_node(NODE_BINARY_OP, token.value);
-        ast_add_child(new_node, node);
-        ast_add_child(new_node, parse_term(parser));
-        node = new_node;
-    }
-    return node;
-}
-
-ASTNode* parse_expr(Parser* parser) {
     ASTNode* node = parse_power(parser);
-    while (parser->current.type == TOK_PLUS || parser->current.type == TOK_MINUS) {
+
+    while (parser->current.type == TOK_MULTIPLY || parser->current.type == TOK_DIVIDE) {
         Token token = parser->current;
         parser_advance(parser);
         ASTNode* new_node = ast_create_node(NODE_BINARY_OP, token.value);
@@ -273,20 +246,56 @@ ASTNode* parse_expr(Parser* parser) {
     return node;
 }
 
+ASTNode* parse_power(Parser* parser) {
+    ASTNode* node = parse_factor(parser);
+    if (parser->current.type == TOK_CARET) {
+        Token token = parser->current;
+        parser_advance(parser);
+        ASTNode* new_node = ast_create_node(NODE_BINARY_OP, token.value);
+        ast_add_child(new_node, node);
+        ast_add_child(new_node, parse_power(parser));
+        node = new_node;
+    }
+    return node;
+}
+
+ASTNode* parse_expr(Parser* parser) {
+    ASTNode* node = parse_term(parser);
+    while (parser->current.type == TOK_PLUS || parser->current.type == TOK_MINUS) {
+        Token token = parser->current;
+        parser_advance(parser);
+        ASTNode* new_node = ast_create_node(NODE_BINARY_OP, token.value);
+        ast_add_child(new_node, node);
+        ast_add_child(new_node, parse_term(parser));
+        node = new_node;
+    }
+    return node;
+}
+
 void codegen_expr(const ASTNode* node) {
     if (!node) return;
 
     switch (node->type) {
         case NODE_NUMBER:
-            printf("%s", node->value);
+            if(strchr(node->value, '.') != NULL) printf("euler_num(%s.0)", node->value);
+            else printf("euler_num(%s)", node->value);
             break;
         case NODE_IDENTIFIER:
-            printf("%s", node->value);
+            printf("euler_var(\"%s\")", node->value);
+            break;
+        case NODE_CALL:
+            printf("euler_%s(", node->value);
+            codegen_expr(node->left);
+            printf(")");
             break;
         case NODE_BINARY_OP:
-            printf("(");
+            if(strcmp(node->value, "+")==0) printf("euler_add(");
+            else if(strcmp(node->value, "-")==0) printf("euler_sub(");
+            else if(strcmp(node->value, "*")==0) printf("euler_mul(");
+            else if(strcmp(node->value, "/")==0) printf("euler_div(");
+            else if(strcmp(node->value, "^")==0) printf("euler_pow(");
             codegen_expr(node->left);
-            printf(" %s ", node->value);
+            printf(", ");
             codegen_expr(node->right);
             printf(")");
             break;
@@ -300,9 +309,12 @@ void codegen_program(const ASTNode* root) {
     printf("#include <stdio.h>\n");
     printf("#include \"euler_runtime.h\"\n\n");
     printf("int main() {\n");
-    printf("    EulerExpr* res = ;\n");
-    if (!root) return;
-    codegen_expr(root);
+    printf("    EulerExpr* res = \n");
+    if(root) {
+        codegen_expr(root);
+    } else {
+        printf("NULL");
+    }
     printf(";\n");
     printf("    euler_print_expr(res);\n");
     printf("    printf(\"\\n\");\n");
