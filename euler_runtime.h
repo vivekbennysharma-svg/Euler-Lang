@@ -36,7 +36,8 @@ EulerExpr* euler_div(EulerExpr* left, EulerExpr* right);
 EulerExpr* euler_pow(EulerExpr* left, EulerExpr* right);
 EulerExpr* euler_sin(EulerExpr* expr);
 EulerExpr* euler_cos(EulerExpr* expr);
-EulerExpr* euler_diff(EulerExpr* expr, const char* var);
+EulerExpr* euler_diff(EulerExpr* expr, EulerExpr* var);
+
 void euler_print_expr(const EulerExpr* expr);
 void euler_free_expr(EulerExpr* expr);
 

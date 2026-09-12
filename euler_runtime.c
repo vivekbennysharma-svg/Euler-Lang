@@ -86,14 +86,16 @@ static EulerExpr* clone_expr(const EulerExpr* expr) {
     return new_expr;
 }
 
-EulerExpr* euler_diff(EulerExpr* expr, const char* var) {
-    if (!expr) return NULL;
+EulerExpr* euler_diff(EulerExpr* expr, EulerExpr* var) {
+    if (!expr || !var) return NULL;
 
+
+    const char* target_var = var->name;
     switch (expr->kind) {
         case EXPR_NUM:
             return euler_num(0.0);
         case EXPR_VAR:
-            if(strcmp(expr->name, var) == 0) {
+            if(strcmp(expr->name, target_var) == 0) {
                 return euler_num(1.0);
             } else {
                 return euler_num(0.0);
@@ -123,7 +125,7 @@ EulerExpr* euler_diff(EulerExpr* expr, const char* var) {
             return euler_div(numerator, denominator);
         }
         case EXPR_POW: {
-            if (expr->right->kind == EXPR_NUM) {
+            if (expr->right && expr->right->kind == EXPR_NUM) {
                 double exponent = expr->right->val;
                 EulerExpr* new_exponent = euler_num(exponent - 1);
                 EulerExpr* base_clone = clone_expr(expr->left);
