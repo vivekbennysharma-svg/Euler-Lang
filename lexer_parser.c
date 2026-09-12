@@ -277,8 +277,8 @@ void codegen_expr(const ASTNode* node) {
 
     switch (node->type) {
         case NODE_NUMBER:
-            if(strchr(node->value, '.') != NULL) printf("euler_num(%s.0)", node->value);
-            else printf("euler_num(%s)", node->value);
+            if(strchr(node->value, '.') != NULL) printf("euler_num(%s)", node->value);
+            else printf("euler_num(%s.0)", node->value);
             break;
         case NODE_IDENTIFIER:
             printf("euler_var(\"%s\")", node->value);
