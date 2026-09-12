@@ -323,13 +323,14 @@ void codegen_program(const ASTNode* root) {
     printf("#include <stdio.h>\n");
     printf("#include \"euler_runtime.h\"\n\n");
     printf("int main() {\n");
-    printf("    EulerExpr* res = \n");
+    printf("    EulerExpr* res = ");
     if(root) {
         codegen_expr(root);
     } else {
         printf("NULL");
     }
     printf(";\n");
+    printf("    res = euler_simplify(res);\n");
     printf("    euler_print_expr(res);\n");
     printf("    printf(\"\\n\");\n");
     printf("    return 0;\n");

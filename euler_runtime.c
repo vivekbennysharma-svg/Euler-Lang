@@ -153,6 +153,217 @@ EulerExpr* euler_diff(EulerExpr* expr, EulerExpr* var) {
     }
 }
 
+static bool is_num(const EulerExpr* expr, double val) {
+    return expr && expr->kind == EXPR_NUM && fabs(expr->val - val)<1e-9;
+}
+
+EulerExpr* euler_simplify(EulerExpr* expr) {
+    if (!expr) return NULL;
+
+    expr->left = euler_simplify(expr->left);
+    expr->right = euler_simplify(expr->right);
+
+    if(expr->left && expr->right && expr->left->kind == EXPR_NUM && expr->right->kind == EXPR_NUM) {
+        double left_val = expr->left->val;
+        double right_val = expr->right->val;
+        double res = 0.0;
+        bool foldable = true;
+
+        switch (expr->kind) {
+            case EXPR_ADD:
+                res = left_val + right_val;
+                break;
+            case EXPR_SUB:
+                res = left_val - right_val;
+                break;
+            case EXPR_MUL:
+                res = left_val * right_val;
+                break;
+            case EXPR_DIV:
+                if(fabs(right_val) > 1e-9) res = left_val / right_val;
+                else foldable = false;
+                break;
+            case EXPR_POW:
+                res = pow(left_val, right_val);
+                break;
+            default:
+                foldable = false;
+                break;
+        }
+        if(foldable){
+            euler_free_expr(expr->left);
+            euler_free_expr(expr->right);
+            expr->kind = EXPR_NUM;
+            expr->val = res;
+            expr->left = NULL;
+            expr->right = NULL;
+            return expr;
+        }
+    }
+    switch (expr->kind) {
+        case EXPR_ADD:
+            // x + 0 = x
+            if(is_num(expr->right, 0.0)){
+                EulerExpr* keep = expr->left;
+                euler_free_expr(expr->right);
+                free(expr);
+                return keep;
+            }
+            // 0 + x = x
+            if(is_num(expr->left, 0.0)){
+                EulerExpr* keep = expr->right;
+                euler_free_expr(expr->left);
+                free(expr);
+                return keep;
+            }
+            // c1 + (c2 + x) = (c1 + c2) + x
+            if(expr->left && expr->right && expr->left->kind == EXPR_NUM && expr->right->kind == EXPR_ADD){
+                if(expr->right->left && expr->right->left->kind == EXPR_NUM){
+                    double new_val = expr->left->val + expr->right->left->val;
+                    EulerExpr* x = expr->right->right;
+                    euler_free_expr(expr->left);
+                    euler_free_expr(expr->right->left);
+                    free(expr->right);
+                    expr->left=euler_num(new_val);
+                    expr->right = x;
+                    return euler_simplify(expr);
+                }
+            }
+            break;
+        case EXPR_SUB:
+            // x - 0 = x
+            if(is_num(expr->right, 0.0)){
+                EulerExpr* keep = expr->left;
+                euler_free_expr(expr->right);
+                free(expr);
+                return keep;
+            }
+            break;
+        case EXPR_MUL:
+            // x * 0 = 0 or 0 * x = 0
+            if(is_num(expr->left, 0.0)||is_num(expr->right, 0.0)){
+                euler_free_expr(expr->left);
+                euler_free_expr(expr->right);
+                expr->kind = EXPR_NUM;
+                expr->val = 0.0;
+                expr->left = NULL;
+                expr->right = NULL;
+                return expr;
+            }
+            // 1 * x = x
+            if(is_num(expr->left, 1.0)){
+                EulerExpr* keep = expr->right;
+                euler_free_expr(expr->left);
+                free(expr);
+                return keep;
+            }
+            // x * 1 = x
+            if(is_num(expr->right, 1.0)){
+                EulerExpr* keep = expr->left;
+                euler_free_expr(expr->right);
+                free(expr);
+                return keep;
+            }
+            // c1 * (c2 * x) = (c1 * c2) * x
+            if(expr->left && expr->right && expr->left->kind == EXPR_NUM && expr->right->kind == EXPR_MUL){
+                if(expr->right->left && expr->right->left->kind == EXPR_NUM){
+                    double new_val = expr->left->val * expr->right->left->val;
+                    EulerExpr* x = expr->right->right;
+
+                    euler_free_expr(expr->left);
+                    euler_free_expr(expr->right->left);
+                    free(expr->right);
+
+                    expr->left = euler_num(new_val);
+                    expr->right = x;
+                    return euler_simplify(expr);
+                }
+                // c1 * (x * c2) = (c1 * c2) * x
+                if(expr->right->right && expr->right->right->kind == EXPR_NUM){
+                    double new_val = expr->left->val * expr->right->right->val;
+                    EulerExpr* x = expr->right->left;
+
+                    euler_free_expr(expr->left);
+                    euler_free_expr(expr->right->right);
+                    free(expr->right);
+
+                    expr->left = euler_num(new_val);
+                    expr->right = x;
+                    return euler_simplify(expr);
+                }
+            }
+            // (c1 * x) * c2 = (c1 * c2) * x
+            if(expr->right && expr->left && expr->right->kind == EXPR_NUM && expr->left->kind == EXPR_MUL){
+                if(expr->left->left && expr->left->left->kind == EXPR_NUM){
+                    double new_val = expr->right->val * expr->left->left->val;
+                    EulerExpr* x = expr->left->right;
+
+                    euler_free_expr(expr->right);
+                    euler_free_expr(expr->left->left);
+                    free(expr->left);
+
+                    expr->right = euler_num(new_val);
+                    expr->left = x;
+                    return euler_simplify(expr);
+                }
+                // (x * c1) * c2 = (c1 * c2) * x
+                if(expr->left->right && expr->left->right->kind == EXPR_NUM){
+                    double new_val = expr->right->val * expr->left->right->val;
+                    EulerExpr* x = expr->left->left;
+
+                    euler_free_expr(expr->right);
+                    euler_free_expr(expr->left->right);
+                    free(expr->left);
+
+                    expr->right = euler_num(new_val);
+                    expr->left = x;
+                    return euler_simplify(expr);
+                }
+            }
+            break;
+        case EXPR_DIV:
+            // 0 / x = 0
+            if(is_num(expr->left, 0.0) && !is_num(expr->right, 0.0)){
+                euler_free_expr(expr->left);
+                euler_free_expr(expr->right);
+                expr->kind = EXPR_NUM;
+                expr->val = 0.0;
+                expr->left = NULL;
+                expr->right = NULL;
+                return expr;
+            }
+            // x / 1 = x
+            if(is_num(expr->right, 1.0)){
+                EulerExpr* keep = expr->left;
+                euler_free_expr(expr->right);
+                free(expr);
+                return keep;
+            }
+            break;
+        case EXPR_POW:
+            // x ^ 0 = 1
+            if(is_num(expr->right, 0.0)){
+                euler_free_expr(expr->left);
+                euler_free_expr(expr->right);
+                expr->kind = EXPR_NUM;
+                expr->val = 1.0;
+                expr->left = NULL;
+                expr->right = NULL;
+                return expr;
+            }
+            // x ^ 1 = x
+            if(is_num(expr->right, 1.0)){
+                EulerExpr* keep = expr->left;
+                euler_free_expr(expr->right);
+                free(expr);
+                return keep;
+            }
+            break;
+        default:
+            break;
+    }
+    return expr;
+}
 void euler_print_expr(const EulerExpr* expr) {
     if (!expr) return;
 
