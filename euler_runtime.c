@@ -121,7 +121,8 @@ EulerExpr* euler_diff(EulerExpr* expr, EulerExpr* var) {
             EulerExpr* numerator1 = euler_mul(left_diff, right_clone);
             EulerExpr* numerator2 = euler_mul(left_clone, right_diff);
             EulerExpr* numerator = euler_sub(numerator1, numerator2);
-            EulerExpr* denominator = euler_pow(right_clone, euler_num(2.0));
+            EulerExpr* denominator = euler_pow(clone_expr(right_clone), euler_num(2.0));
+            euler_free_expr(right_clone);
             return euler_div(numerator, denominator);
         }
         case EXPR_POW: {
@@ -221,9 +222,12 @@ EulerExpr* euler_simplify(EulerExpr* expr) {
                 if(expr->right->left && expr->right->left->kind == EXPR_NUM){
                     double new_val = expr->left->val + expr->right->left->val;
                     EulerExpr* x = expr->right->right;
+                    EulerExpr* right_node = expr->right;
+
                     euler_free_expr(expr->left);
-                    euler_free_expr(expr->right->left);
-                    free(expr->right);
+                    euler_free_expr(right_node->left);
+                    free(right_node);
+
                     expr->left=euler_num(new_val);
                     expr->right = x;
                     return euler_simplify(expr);
@@ -269,10 +273,11 @@ EulerExpr* euler_simplify(EulerExpr* expr) {
                 if(expr->right->left && expr->right->left->kind == EXPR_NUM){
                     double new_val = expr->left->val * expr->right->left->val;
                     EulerExpr* x = expr->right->right;
+                    EulerExpr* right_node = expr->right;
 
                     euler_free_expr(expr->left);
-                    euler_free_expr(expr->right->left);
-                    free(expr->right);
+                    euler_free_expr(right_node->left);
+                    free(right_node);
 
                     expr->left = euler_num(new_val);
                     expr->right = x;
@@ -282,10 +287,11 @@ EulerExpr* euler_simplify(EulerExpr* expr) {
                 if(expr->right->right && expr->right->right->kind == EXPR_NUM){
                     double new_val = expr->left->val * expr->right->right->val;
                     EulerExpr* x = expr->right->left;
+                    EulerExpr* right_node = expr->right;
 
                     euler_free_expr(expr->left);
-                    euler_free_expr(expr->right->right);
-                    free(expr->right);
+                    euler_free_expr(right_node->right);
+                    free(right_node);
 
                     expr->left = euler_num(new_val);
                     expr->right = x;
@@ -297,10 +303,11 @@ EulerExpr* euler_simplify(EulerExpr* expr) {
                 if(expr->left->left && expr->left->left->kind == EXPR_NUM){
                     double new_val = expr->right->val * expr->left->left->val;
                     EulerExpr* x = expr->left->right;
+                    EulerExpr* left_node = expr->left;
 
                     euler_free_expr(expr->right);
-                    euler_free_expr(expr->left->left);
-                    free(expr->left);
+                    euler_free_expr(left_node->left);
+                    free(left_node);
 
                     expr->right = euler_num(new_val);
                     expr->left = x;
@@ -310,10 +317,11 @@ EulerExpr* euler_simplify(EulerExpr* expr) {
                 if(expr->left->right && expr->left->right->kind == EXPR_NUM){
                     double new_val = expr->right->val * expr->left->right->val;
                     EulerExpr* x = expr->left->left;
+                    EulerExpr* left_node = expr->left;
 
                     euler_free_expr(expr->right);
-                    euler_free_expr(expr->left->right);
-                    free(expr->left);
+                    euler_free_expr(left_node->right);
+                    free(left_node);
 
                     expr->right = euler_num(new_val);
                     expr->left = x;
@@ -398,7 +406,7 @@ EulerExpr* euler_eval(EulerExpr* expr, EulerExpr* var, EulerExpr* val) {
         case EXPR_POW:
             res = euler_pow(euler_eval(expr->left, var, val), euler_eval(expr->right, var, val));
             break;
-        case EXPR_SIN:
+        case EXPR_SIN: {
             EulerExpr* inner = euler_eval(expr->left, var, val);
             if(inner && inner->kind == EXPR_NUM) {
                 res = euler_num(sin(inner->val));
@@ -407,7 +415,8 @@ EulerExpr* euler_eval(EulerExpr* expr, EulerExpr* var, EulerExpr* val) {
                 res = euler_sin(inner);
             }
             break;
-        case EXPR_COS:
+        }
+        case EXPR_COS: {
             EulerExpr* inner = euler_eval(expr->left, var, val);
             if(inner && inner->kind == EXPR_NUM) {
                 res = euler_num(cos(inner->val));
@@ -416,6 +425,7 @@ EulerExpr* euler_eval(EulerExpr* expr, EulerExpr* var, EulerExpr* val) {
                 res = euler_cos(inner);
             }
             break;
+        }
         default:
             res = NULL;
     }
@@ -450,8 +460,9 @@ EulerExpr* euler_integrate(EulerExpr* expr, EulerExpr* var, EulerExpr* a, EulerE
     return euler_num((h/3.0) * sum);
 }
 
-EulerExpr* euler_solve(EulerExpr* expr, EulerExpr* var, EulerExpr* guess) {
-    if(!expr || !var || !guess) return NULL;
+EulerExpr* euler_solve(EulerExpr* expr, EulerExpr* var) {
+    if(!expr || !var) return NULL;
+    EulerExpr* guess = euler_num(1.0); // Initial guess
 
     EulerExpr* f_prime = euler_simplify(euler_diff(expr, var));
     double x = (guess->kind == EXPR_NUM) ? guess->val : 1.0;

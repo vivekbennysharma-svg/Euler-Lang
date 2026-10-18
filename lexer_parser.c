@@ -1,7 +1,8 @@
 #include<stdio.h>
 #include<stdlib.h>
 #include<string.h>
-#include <ctype.h>
+#include<ctype.h>
+#include<stdbool.h>
 
 //token types
 typedef enum {
@@ -60,6 +61,10 @@ typedef struct {
     Token current;
 } Parser;
 
+#define MAX_SYMBOLS 256
+static char symbol_table[MAX_SYMBOLS][64];
+static int symbol_count = 0;
+
 //    ||FUNCTION PROTOTYPES||
 //File reader
 char* read_file_to_string(const char* filepath);
@@ -86,6 +91,11 @@ ASTNode* parse_program(Parser* parser);
 //Code Generator functions
 void codegen_expr(const ASTNode* node);
 void codegen_program(const ASTNode* root);
+
+//Symbol tracking
+static void add_symbol(const char* name);
+static bool is_defined_symbol(const char* name);
+
 
 //    ||FUNCTION IMPLEMENTATIONS||
 char* read_file_to_string(const char* filepath) {
@@ -263,6 +273,14 @@ ASTNode* parse_factor(Parser* parser) {
         parser_advance(parser);
         return node;
     }
+    if(token.type == TOK_MINUS){
+        parser_advance(parser);
+        ASTNode* zero = ast_create_node(NODE_NUMBER, "0");
+        ASTNode* sub = ast_create_node(NODE_BINARY_OP, "-");
+        ast_add_child(sub, zero);
+        ast_add_child(sub, parse_factor(parser));
+        return sub;
+    }
     fprintf(stderr, "Unexpected token: %s\n", token.value);
     exit(EXIT_FAILURE);
 }
@@ -383,7 +401,11 @@ void codegen_expr(const ASTNode* node) {
             else printf("euler_num(%s.0)", node->value);
             break;
         case NODE_IDENTIFIER:
-            printf("euler_var(\"%s\")", node->value);
+            if(is_defined_symbol(node->value)){
+                printf("%s", node->value);
+            } else {
+                printf("euler_var(\"%s\")", node->value);
+            }
             break;
         case NODE_CALL:
             printf("euler_%s(", node->value);
@@ -422,6 +444,7 @@ void codegen_program(const ASTNode* root) {
                 printf("EulerExpr* %s = euler_simplify(", stmt->value);
                 codegen_expr(stmt->left);
                 printf(");\n");
+                add_symbol(stmt->value);
             } else if(stmt->type == NODE_PRINT) {
                 printf("     {\n");
                 printf("         EulerExpr* _p = euler_simplify(");
@@ -463,4 +486,21 @@ int main(int argc, char* argv[]) {
     free(src);
 
     return 0;
+}
+
+static void add_symbol(const char* name){
+    if(symbol_count < MAX_SYMBOLS){
+        strncpy(symbol_table[symbol_count], name, sizeof(symbol_table[symbol_count])-1);
+        symbol_table[symbol_count][sizeof(symbol_table[symbol_count])-1]='\0';
+        symbol_count++;
+    }
+}
+
+static bool is_defined_symbol(const char* name){
+    for(int i=0;i<symbol_count;i++){
+        if(strcmp(symbol_table[i],name)==0){
+            return true;
+        }
+    }
+    return false;
 }
