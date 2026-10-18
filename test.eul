@@ -1,1 +1,9 @@
-diff(x^3 + 3*x^2 + 3*x + 1,x)
+let f = x^3 + 2*x - cos(x);
+let df = diff(f,x);
+print(df);
+
+let area = integrate(x^2, x, 0, 1);
+print(area);
+
+let root = solve(x^2-4,x,1);
+print(root);

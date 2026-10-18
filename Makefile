@@ -1,16 +1,16 @@
-CC := gcc
-CFLAGS := -Wall -Wextra -O2
-LDFLAGS := -lm
+CC          := gcc
+CFLAGS      := -Wall -Wextra -O2
+LDFLAGS     := -lm
 
-PARSER_SRC := lexer_parser.c
-PARSER_BIN := euler_parser.exe
+PARSER_SRC  := lexer_parser.c
+PARSER_BIN  := euler_parser.exe
 
 RUNTIME_SRC := euler_runtime.c
-RUNTIME_BIN := euler_runtime.h
+RUNTIME_HDR := euler_runtime.h
 
-TEMP_C := temp.c
+TEMP_C      := temp.c
 
-.PHONY: all clean
+.PHONY: all clean run
 
 all: $(PARSER_BIN)
 
@@ -29,6 +29,7 @@ run: $(PARSER_BIN) $(RUNTIME_SRC) $(RUNTIME_HDR)
 	@echo ------------------------------------------------------------
 	@program.exe
 	@echo ------------------------------------------------------------
+
 clean:
 	@if exist $(PARSER_BIN) del /F /Q $(PARSER_BIN)
 	@if exist $(TEMP_C) del /F /Q $(TEMP_C)

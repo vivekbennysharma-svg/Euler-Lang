@@ -364,6 +364,121 @@ EulerExpr* euler_simplify(EulerExpr* expr) {
     }
     return expr;
 }
+
+EulerExpr* euler_eval(EulerExpr* expr, EulerExpr* var, EulerExpr* val) {
+    if(!expr || !var || !val) return NULL;
+
+    const char* target_var = var->name;
+    double numeric_val = (val->kind == EXPR_NUM) ? val->val : 0.0;
+    EulerExpr* res = NULL;
+
+    switch (expr->kind) {
+        case EXPR_NUM:
+            res = euler_num(expr->val);
+            break;
+        case EXPR_VAR:
+            if(strcmp(expr->name, target_var) == 0) {
+                res = euler_num(numeric_val);
+            } else {
+                res = euler_var(expr->name);
+            }
+            break;
+        case EXPR_ADD:
+            res = euler_add(euler_eval(expr->left, var, val), euler_eval(expr->right, var, val));
+            break;
+        case EXPR_SUB:
+            res = euler_sub(euler_eval(expr->left, var, val), euler_eval(expr->right, var, val));
+            break;
+        case EXPR_MUL:
+            res = euler_mul(euler_eval(expr->left, var, val), euler_eval(expr->right, var, val));
+            break;
+        case EXPR_DIV:
+            res = euler_div(euler_eval(expr->left, var, val), euler_eval(expr->right, var, val));
+            break;
+        case EXPR_POW:
+            res = euler_pow(euler_eval(expr->left, var, val), euler_eval(expr->right, var, val));
+            break;
+        case EXPR_SIN:
+            EulerExpr* inner = euler_eval(expr->left, var, val);
+            if(inner && inner->kind == EXPR_NUM) {
+                res = euler_num(sin(inner->val));
+                euler_free_expr(inner);
+            } else {
+                res = euler_sin(inner);
+            }
+            break;
+        case EXPR_COS:
+            EulerExpr* inner = euler_eval(expr->left, var, val);
+            if(inner && inner->kind == EXPR_NUM) {
+                res = euler_num(cos(inner->val));
+                euler_free_expr(inner);
+            } else {
+                res = euler_cos(inner);
+            }
+            break;
+        default:
+            res = NULL;
+    }
+    return euler_simplify(res);
+}
+
+EulerExpr* euler_integrate(EulerExpr* expr, EulerExpr* var, EulerExpr* a, EulerExpr* b) {
+    if(!expr || !var || !a || !b) return NULL;
+    double x0 = (a->kind == EXPR_NUM) ? a->val : 0.0;
+    double xn = (b->kind == EXPR_NUM) ? b->val : 0.0;
+    int n = 1000; // Number of intervals
+    double h = (xn - x0) / n;
+
+    EulerExpr* cur = euler_num(x0);
+    EulerExpr* f0 = euler_eval(expr, var, cur);
+    double sum = (f0 && f0->kind == EXPR_NUM) ? f0->val : 0.0;
+    euler_free_expr(f0);
+
+    for(int i = 1; i < n; ++i) {
+        cur->val = x0 + i * h;
+        EulerExpr* fi = euler_eval(expr, var, cur);
+        double val_i = (fi && fi->kind == EXPR_NUM) ? fi->val : 0.0;
+        sum += (i%2==0 ? 2.0 : 4.0) *val_i;
+        euler_free_expr(fi);
+    }
+    cur->val = xn;
+    EulerExpr* fn = euler_eval(expr, var, cur);
+    sum += (fn && fn->kind == EXPR_NUM) ? fn->val : 0.0;
+    euler_free_expr(fn);
+    euler_free_expr(cur);
+
+    return euler_num((h/3.0) * sum);
+}
+
+EulerExpr* euler_solve(EulerExpr* expr, EulerExpr* var, EulerExpr* guess) {
+    if(!expr || !var || !guess) return NULL;
+
+    EulerExpr* f_prime = euler_simplify(euler_diff(expr, var));
+    double x = (guess->kind == EXPR_NUM) ? guess->val : 1.0;
+    EulerExpr* x_node = euler_num(x);
+
+    for(int i=0; i<100; i++){
+        x_node->val = x;
+        EulerExpr* fx = euler_eval(expr, var, x_node);
+        EulerExpr* dfx = euler_eval(f_prime, var, x_node);
+
+        double y = (fx && fx->kind == EXPR_NUM) ? fx->val : 0.0;
+        double dy = (dfx && dfx->kind == EXPR_NUM) ? dfx->val : 0.0;
+        euler_free_expr(fx);
+        euler_free_expr(dfx);
+
+        if(fabs(dy) < 1e-12) break;
+        double x_next = x - (y/dy);
+        if(fabs(x_next-x) < 1e-7){
+            x = x_next;
+            break;
+        }
+        x=x_next;
+    }
+    euler_free_expr(x_node);
+    euler_free_expr(f_prime);
+    return euler_num(x);
+}
 void euler_print_expr(const EulerExpr* expr) {
     if (!expr) return;
 

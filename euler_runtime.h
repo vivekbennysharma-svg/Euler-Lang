@@ -40,6 +40,9 @@ EulerExpr* euler_cos(EulerExpr* expr);
 //Calculus utilities
 EulerExpr* euler_diff(EulerExpr* expr, EulerExpr* var);
 EulerExpr* euler_simplify(EulerExpr* expr);
+EulerExpr* euler_eval(EulerExpr* expr, EulerExpr* var, EulerExpr* val);
+EulerExpr* euler_integrate(EulerExpr* expr, EulerExpr* var, EulerExpr* a, EulerExpr* b);
+EulerExpr* euler_solve(EulerExpr* expr, EulerExpr* var, EulerExpr* guess); 
 
 void euler_print_expr(const EulerExpr* expr);
 void euler_free_expr(EulerExpr* expr);

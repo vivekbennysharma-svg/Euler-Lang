@@ -37,7 +37,11 @@ typedef enum {
     NODE_NUMBER,
     NODE_IDENTIFIER,
     NODE_BINARY_OP,
-    NODE_CALL
+    NODE_CALL,
+    NODE_LET,
+    NODE_PRINT,
+    NODE_EXPR_STMT,
+    NODE_PROGRAM
 } ASTNodeType;
 
 //AST node structure
@@ -46,6 +50,8 @@ typedef struct ASTNode {
     char* value;
     struct ASTNode* left;
     struct ASTNode* right;
+    struct ASTNode** children;
+    int child_count;
 } ASTNode;
 
 //parser structure
@@ -74,6 +80,8 @@ ASTNode* parse_factor(Parser* parser);
 ASTNode* parse_term(Parser* parser);
 ASTNode* parse_power(Parser* parser);
 ASTNode* parse_expr(Parser* parser);
+ASTNode* parse_statement(Parser* parser);
+ASTNode* parse_program(Parser* parser);
 
 //Code Generator functions
 void codegen_expr(const ASTNode* node);
@@ -173,6 +181,8 @@ ASTNode* ast_create_node(ASTNodeType type, const char* value) {
     node->value = strdup(value);
     node->left = NULL;
     node->right = NULL;
+    node->children = NULL;
+    node->child_count = 0;
     return node;
 }
 
@@ -189,9 +199,17 @@ void ast_add_child(ASTNode* parent, ASTNode* child) {
 
 void ast_free(ASTNode* node) {
     if (!node) return;
-    free(node->value);
+    if(node->value) {
+        free(node->value);
+    }
     ast_free(node->left);
     ast_free(node->right);
+    for(int i = 0; i < node->child_count; i++) {
+        ast_free(node->children[i]);
+    }
+    if(node->children) {
+        free(node->children);
+    }
     free(node);
 }
 
@@ -212,14 +230,21 @@ ASTNode* parse_factor(Parser* parser) {
         if(parser->current.type == TOK_LPAREN) {
             parser_advance(parser);
             ASTNode* call_node = ast_create_node(NODE_CALL, name);
-            call_node->left = parse_expr(parser);
-            
-            if(parser->current.type == TOK_COMMA) {
-                parser_advance(parser);
-                call_node->right = parse_expr(parser);
-            }
 
             if(parser->current.type != TOK_RPAREN) {
+                do {
+                    ASTNode* arg = parse_expr(parser);
+                    call_node->children = (ASTNode**)realloc(call_node->children, sizeof(ASTNode*) * (call_node->child_count + 1));
+                    call_node->children[call_node->child_count++] = arg;
+                    if(parser->current.type == TOK_COMMA) {
+                        parser_advance(parser);
+                    } else {
+                        break;
+                    }
+                } while (1);
+            }
+
+            if (parser->current.type != TOK_RPAREN) {
                 fprintf(stderr, "Expected ')'\n");
                 exit(EXIT_FAILURE);
             }
@@ -282,6 +307,73 @@ ASTNode* parse_expr(Parser* parser) {
     return node;
 }
 
+ASTNode* parse_statement(Parser* parser){
+    if(parser->current.type == TOK_IDENTIFIER && strcmp(parser->current.value, "let") == 0) {
+        parser_advance(parser);
+        if(parser->current.type != TOK_IDENTIFIER) {
+            fprintf(stderr, "Expected identifier after 'let'\n");
+            exit(EXIT_FAILURE);
+        }
+        char var_name[64];
+        strncpy(var_name, parser->current.value, sizeof(var_name));
+        parser_advance(parser);
+        if(parser->current.type != TOK_ASSIGN) {
+            fprintf(stderr, "Expected '=' after identifier in let statement\n");
+            exit(EXIT_FAILURE);
+        }
+        parser_advance(parser);
+
+        ASTNode* expr = parse_expr(parser);
+        if(parser->current.type == TOK_SEMICOLON){
+            parser_advance(parser);
+        }
+
+        ASTNode* stmt = ast_create_node(NODE_LET, var_name);
+        stmt->left = expr;
+        return stmt;
+    }
+
+    if(parser->current.type == TOK_IDENTIFIER && strcmp(parser->current.value, "print")==0){
+        parser_advance(parser);
+        if(parser->current.type != TOK_LPAREN){
+            fprintf(stderr, "Expected '(' after 'print'\n");
+            exit(EXIT_FAILURE);
+        }
+        parser_advance(parser);
+        ASTNode* expr = parse_expr(parser);
+        if(parser->current.type != TOK_RPAREN){
+            fprintf(stderr, "Expected ')' after print expression\n");
+            exit(EXIT_FAILURE);
+        }
+        parser_advance(parser);
+        if(parser->current.type == TOK_SEMICOLON){
+            parser_advance(parser);
+        }
+
+        ASTNode* stmt = ast_create_node(NODE_PRINT, "print");
+        stmt->left = expr;
+        return stmt;
+    }
+
+    ASTNode* expr = parse_expr(parser);
+    if(parser->current.type == TOK_SEMICOLON){
+        parser_advance(parser);
+    }
+    ASTNode* stmt = ast_create_node(NODE_EXPR_STMT, NULL);
+    stmt->left = expr;
+    return stmt;
+}
+
+ASTNode* parse_program(Parser* parser) {
+    ASTNode* program = ast_create_node(NODE_PROGRAM, NULL);
+    while (parser->current.type != TOK_EOF) {
+        ASTNode* stmt = parse_statement(parser);
+        program->children = (ASTNode**)realloc(program->children, sizeof(ASTNode*) * (program->child_count + 1));
+        program->children[program->child_count++] = stmt;
+    }
+    return program;
+}
+
 void codegen_expr(const ASTNode* node) {
     if (!node) return;
 
@@ -295,10 +387,9 @@ void codegen_expr(const ASTNode* node) {
             break;
         case NODE_CALL:
             printf("euler_%s(", node->value);
-            codegen_expr(node->left);
-            if(node->right) {
-                printf(", ");
-                codegen_expr(node->right);
+            for(int i=0; i<node->child_count; i++){
+                if(i>0) printf(", ");
+                codegen_expr(node->children[i]);
             }
             printf(")");
             break;
@@ -323,16 +414,34 @@ void codegen_program(const ASTNode* root) {
     printf("#include <stdio.h>\n");
     printf("#include \"euler_runtime.h\"\n\n");
     printf("int main() {\n");
-    printf("    EulerExpr* res = ");
-    if(root) {
-        codegen_expr(root);
-    } else {
-        printf("NULL");
+    
+    if(root && root->type == NODE_PROGRAM) {
+        for(int i=0; i<root->child_count; i++){
+            ASTNode* stmt = root->children[i];
+            if(stmt->type == NODE_LET) {
+                printf("EulerExpr* %s = euler_simplify(", stmt->value);
+                codegen_expr(stmt->left);
+                printf(");\n");
+            } else if(stmt->type == NODE_PRINT) {
+                printf("     {\n");
+                printf("         EulerExpr* _p = euler_simplify(");
+                codegen_expr(stmt->left);
+                printf(");\n");
+                printf("         euler_print_expr(_p);\n");
+                printf("         printf(\"\\n\");\n");
+                printf("    }\n");
+            } else if(stmt->type == NODE_EXPR_STMT) {
+                printf("    {\n");
+                printf("        EulerExpr* _e = euler_simplify(");
+                codegen_expr(stmt->left);
+                printf(");\n");
+                printf("        euler_print_expr(_e);\n");
+                printf("        printf(\"\\n\");\n");
+                printf("    }\n");
+            }
+        }
     }
-    printf(";\n");
-    printf("    res = euler_simplify(res);\n");
-    printf("    euler_print_expr(res);\n");
-    printf("    printf(\"\\n\");\n");
+
     printf("    return 0;\n");
     printf("}\n");
 }
@@ -347,7 +456,7 @@ int main(int argc, char* argv[]) {
     lexer_init(&parser.lexer, src);
     parser_advance(&parser);
 
-    ASTNode* root = parse_expr(&parser);
+    ASTNode* root = parse_program(&parser);
     codegen_program(root);
 
     ast_free(root);
