@@ -9,6 +9,7 @@ typedef enum {
     TOK_EOF,
     TOK_NUMBER,
     TOK_IDENTIFIER,
+    TOK_STRING,
     TOK_PLUS,
     TOK_MINUS,
     TOK_MULTIPLY,
@@ -37,6 +38,7 @@ typedef struct {
 typedef enum {
     NODE_NUMBER,
     NODE_IDENTIFIER,
+    NODE_STRING,
     NODE_BINARY_OP,
     NODE_CALL,
     NODE_LET,
@@ -155,15 +157,32 @@ Token lexer_next_token(Lexer* lexer) {
         return tok;
     }
 
-    if (isalpha(current_char)) {
+    if (isalpha((unsigned char)current_char)|| current_char == '_') {
         size_t idx = 0;
         while ((isalnum((unsigned char)lexer->input[lexer->pos]) || lexer->input[lexer->pos] == '_') && idx < 63) {
             tok.value[idx++] = lexer->input[lexer->pos++];
         }
+        tok.value[idx] = '\0';
         tok.type = TOK_IDENTIFIER;
         return tok;
     }
 
+    if(current_char == '"'){
+        lexer->pos++;
+        size_t idx = 0;
+        while(lexer->input[lexer->pos] != '\0' && lexer->input[lexer->pos] != '"' && idx<63) {
+            tok.value[idx++]=lexer->input[lexer->pos++];
+        }
+        tok.value[idx]='\0';
+        if(lexer->input[lexer->pos]=='"'){
+            lexer->pos++;
+        }else{
+            fprintf(stderr, "Unterminated string literal\n");
+            exit(EXIT_FAILURE);
+        }
+        tok.type = TOK_STRING;
+        return tok;
+    }
     lexer->pos++;
     tok.value[0] = current_char;
     tok.value[1] = '\0';
@@ -187,6 +206,10 @@ Token lexer_next_token(Lexer* lexer) {
 
 ASTNode* ast_create_node(ASTNodeType type, const char* value) {
     ASTNode* node = (ASTNode*)malloc(sizeof(ASTNode));
+    if(!node) {
+        fprintf(stderr, "Memory allocation failed\n");
+        exit(EXIT_FAILURE);
+    }
     node->type = type;
     node->value = strdup(value);
     node->left = NULL;
@@ -358,18 +381,34 @@ ASTNode* parse_statement(Parser* parser){
             exit(EXIT_FAILURE);
         }
         parser_advance(parser);
-        ASTNode* expr = parse_expr(parser);
+        ASTNode* stmt = ast_create_node(NODE_PRINT, "print");
         if(parser->current.type != TOK_RPAREN){
+            while(1){
+                ASTNode* arg = NULL;
+                if(parser->current.type == TOK_STRING){
+                    arg = ast_create_node(NODE_STRING, parser->current.value);
+                    parser_advance(parser);
+                }else{
+                    arg=parse_expr(parser);
+                }
+                stmt->children = (ASTNode**)realloc(stmt->children, sizeof(ASTNode*)*(stmt->child_count+1));
+                stmt->children[stmt->child_count++]=arg;
+
+                if(parser->current.type == TOK_COMMA){
+                    parser_advance(parser);
+                }else{
+                    break;
+                }
+            }
+        }
+        if(parser->current.type!=TOK_RPAREN){
             fprintf(stderr, "Expected ')' after print expression\n");
             exit(EXIT_FAILURE);
         }
         parser_advance(parser);
-        if(parser->current.type == TOK_SEMICOLON){
+        if(parser->current.type==TOK_SEMICOLON){
             parser_advance(parser);
         }
-
-        ASTNode* stmt = ast_create_node(NODE_PRINT, "print");
-        stmt->left = expr;
         return stmt;
     }
 
@@ -447,11 +486,23 @@ void codegen_program(const ASTNode* root) {
                 add_symbol(stmt->value);
             } else if(stmt->type == NODE_PRINT) {
                 printf("     {\n");
-                printf("         EulerExpr* _p = euler_simplify(");
-                codegen_expr(stmt->left);
-                printf(");\n");
-                printf("         euler_print_expr(_p);\n");
-                printf("         printf(\"\\n\");\n");
+                for(int j=0;j<stmt->child_count;j++){
+                    ASTNode* arg = stmt->children[j];
+                    if(j>0){
+                        printf("    printf(\" \");\n");
+                    }
+                    if(arg->type == NODE_STRING){
+                        printf("    printf(\"%%s\", \"%s\");\n", arg->value);
+                    }else{
+                        printf("    {\n");
+                        printf("        EulerExpr* _p = euler_simplify(");
+                        codegen_expr(arg);
+                        printf(");\n");
+                        printf("        euler_print_expr(_p);\n");
+                        printf("    }\n");
+                    }
+                }
+                printf("    printf(\"\\n\");\n");
                 printf("    }\n");
             } else if(stmt->type == NODE_EXPR_STMT) {
                 printf("    {\n");
